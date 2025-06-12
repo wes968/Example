@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GridWorld</title>
+    <style>
+        .container {
+            display: flex;
+            justify-content: flex-start;
+            align-items: stretch; /* 確保子元素高度一致 */
+            margin-top: 20px;
+            margin-left: 0; /* 確保最左邊對齊 */
+        }
+
+        .grid-wrapper, .strategy-container, .value-container {
+            text-align: center; /* 置中標題文字 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+
+        }
+
+        .grid-wrapper h3, .strategy-container h3, .value-container h3 {
+            margin: 0 0 10px 0; /* 標題與下方內容的間距 */
+            width: 100%;
+            height: 30px; /* 固定標題高度 */
+            line-height: 30px; /* 確保文字垂直居中 */
+            font-size: 16px; /* 固定字體大小，避免差異 */
+            font-weight: normal; /* 避免粗體影響高度 */
+            box-sizing: border-box; /* 確保邊框和內邊距不影響高度 */
+        }
+
+        .grid-container, #strategy, #value {
+            display: grid;
+            gap: 0px;
+            position: relative;
+            height: calc(var(--grid-size) * 50px); /* 動態高度 */
+            width: calc(var(--grid-size) * 50px); /* 確保寬度也同步 */
+            box-sizing: border-box; /* 避免邊框影響尺寸 */
+        }
+
+        .cell, .strategy-cell, .value-cell {
+            width: 50px;
+            height: 50px;
+            background-color: white;
+            border: 1px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            box-sizing: border-box; /* 確保邊框不影響尺寸 */
+        }
+        .start { background-color: green !important; color: white; }
+        .end { background-color: red !important; color: white; }
+        .obstacle { background-color: gray !important; color: white; }
+        .agent {
+            width: 30px;
+            height: 30px;
+            background-color: blue;
+            border-radius: 50%;
+            position: absolute;
+            transition: all 0.5s ease;
+            z-index: 10;
+        }
+        .strategy-container, .value-container {
+            display: flex;
+            flex-direction: column;
+            margin-left: 20px;
+            min-width: 250px; /* 設置最小寬度，確保標題置中 */
+        }
+        .strategy-cell, .value-cell {
+            width: 50px;
+            height: 50px;
+            background-color: white;
+            border: 1px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .path { background-color: yellow !important; }
+        /* 按鈕區域樣式 */
+        .button-group {
+            margin-top: 10px;
+            margin-left: 0; /* 與最左邊對齊 */
+        }        
+    </style>
+</head>
+<body>
+    <h2>GridWorld(網格地圖開發)</h2>
+    <label for="grid-size">輸入地圖大小 (5-9)：</label>
+    <input type="number" id="grid-size" min="5" max="9" value="5">
+    <button onclick="generateGrid()">產生網格</button>
+    <p class="description">
+        步驟1 : 點擊指定起始單元格（點擊後顯示為綠色）<br><br>
+        步驟2 : 結束單元格（點擊後顯示為紅色）<br><br>
+        步驟3 : 設定 n-2 個障礙物，點擊將這些單元格變為灰色<br><br>
+        步驟4 : 點擊生成策略與價值<br><br>
+        步驟5 : 啟動Agent<br><br>
+        PS : 如果要重新選擇起始、結束、障礙物，請點擊“重新選擇”
+    </p>
+    
+    <div class="container">
+        <div class="grid-wrapper">
+            <h3>Square</h3>
+            <div id="grid" class="grid-container"></div>
+        </div>
+        <div class="strategy-container">
+            <h3>策略顯示</h3>
+            <div id="strategy"></div>
+        </div>
+        <div class="value-container">
+            <h3>價值顯示</h3>
+            <div id="value"></div>
+        </div>
+    </div>
+    
+    <div class="button-group">
+        <button id="generate-strategy-value" onclick="generateStrategyValue()">生成策略與價值</button>
+        <button id="start-agent" onclick="startAgent()" disabled>啟動Agent</button>
+        <button id="reset-selection" onclick="resetSelection()">重新選擇</button>
+    </div>
+
+    <script>
+        let gridSize = 5;
+        let startSet = false;
+        let endSet = false;
+        let obstacles = 0;
+        let maxObstacles = gridSize - 2;
+        let startPos = null;
+        let endPos = null;
+        let obstaclePositions = [];
+        let policy = null;
+        let agentPos = null;
+        let agentElement = null;
+
+        function generateGrid() {
+            const grid = document.getElementById('grid');
+            const inputSize = parseInt(document.getElementById('grid-size').value);
+
+            if (isNaN(inputSize) || inputSize < 5 || inputSize > 9) {
+                alert("請輸入 5 到 9 之間的數字");
+                return;
+            }
+
+            gridSize = inputSize;
+            maxObstacles = gridSize - 2;
+            obstacles = 0;
+            startSet = false;
+            endSet = false;
+            startPos = null;
+            endPos = null;
+            obstaclePositions = [];
+            policy = null;
+            agentPos = null;
+            if (agentElement) {
+                agentElement.remove();
+                agentElement = null;
+            }
+            document.getElementById('start-agent').disabled = true;
+            grid.innerHTML = '';
+            grid.style.gridTemplateColumns = `repeat(${gridSize}, 50px)`;
+            grid.style.gridTemplateRows = `repeat(${gridSize}, 50px)`;
+
+            // 設置 CSS 變量以動態控制高度
+            document.documentElement.style.setProperty('--grid-size', gridSize);
+
+            for (let i = 0; i < gridSize * gridSize; i++) {
+                let cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.dataset.index = i;
+                cell.innerText = i + 1;
+                cell.addEventListener('click', () => handleCellClick(cell));
+                grid.appendChild(cell);
+            }
+
+            // 動態設置 strategy-container 和 value-container 的最小寬度
+            const strategyContainer = document.querySelector('.strategy-container');
+            const valueContainer = document.querySelector('.value-container');
+            const minWidth = gridSize * 50; // 根據網格大小動態計算
+            strategyContainer.style.minWidth = `${minWidth}px`;
+            valueContainer.style.minWidth = `${minWidth}px`;
+
+            // 清空策略和價值顯示
+            document.getElementById('strategy').innerHTML = '';
+            document.getElementById('value').innerHTML = '';
+        }
+
+        function handleCellClick(cell) {
+            const index = parseInt(cell.dataset.index);
+            const row = Math.floor(index / gridSize);
+            const col = index % gridSize;
+            const isAlreadyObstacle = cell.classList.contains('obstacle');
+
+            if (!startSet) {
+                cell.classList.add('start');
+                startSet = true;
+                startPos = [row, col];
+            } else if (!endSet && !cell.classList.contains('start')) {
+                cell.classList.add('end');
+                endSet = true;
+                endPos = [row, col];
+            } else if (obstacles < maxObstacles && !cell.classList.contains('start') && !cell.classList.contains('end') && 
+            !isAlreadyObstacle) {
+                cell.classList.add('obstacle');
+                obstacles++;
+                obstaclePositions.push([row, col]);
+            }
+        }
+
+        function calculatePath(policy) {
+            let path = [];
+            let currentPos = [...startPos];
+            const [endRow, endCol] = endPos;
+            path.push([...currentPos]);
+
+            while (currentPos[0] !== endRow || currentPos[1] !== endCol) {
+                const [row, col] = currentPos;
+                const action = policy[row][col];
+                let newRow = row;
+                let newCol = col;
+
+                if (action === '↑') newRow--;
+                else if (action === '↓') newRow++;
+                else if (action === '←') newCol--;
+                else if (action === '→') newCol++;
+
+                if (newRow < 0 || newRow >= gridSize || newCol < 0 || newCol >= gridSize ||
+                    obstaclePositions.some(([obsRow, obsCol]) => obsRow === newRow && obsCol === newCol)) {
+                    break;
+                }
+
+                currentPos = [newRow, newCol];
+                path.push([...currentPos]);
+            }
+
+            return path;
+        }
+
+        function generateStrategyValue() {
+            if (!startSet || !endSet || obstacles < maxObstacles) {
+                alert("請先設置起點、終點和 n-2 個障礙物！");
+                return;
+            }
+
+            const data = {
+                start: startPos,
+                end: endPos,
+                obstacles: obstaclePositions
+            };
+
+            fetch(`/generate_policy_value/${gridSize}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                policy = data.policy;
+                const path = calculatePath(policy);
+                const strategyDiv = document.getElementById('strategy');
+                const valueDiv = document.getElementById('value');
+                let strategyHTML = '';
+                let valueHTML = '';
+
+                const [endRow, endCol] = endPos;
+                const [startRow, startCol] = startPos;
+
+                for (let i = 0; i < gridSize; i++) {
+                    let strategyRow = '';
+                    let valueRow = '';
+                    for (let j = 0; j < gridSize; j++) {
+                        // 修改策略顯示部分，根據位置添加顏色類
+                        let strategyCellClass = 'strategy-cell';
+                        const isPath = path.some(([row, col]) => row === i && col === j);
+                        if (i === startRow && j === startCol) {
+                            strategyCellClass += ' start'; // 起點綠色
+                        } else if (i === endRow && j === endCol) {
+                            strategyCellClass += ' end'; // 終點紅色
+                        } else if (obstaclePositions.some(([obsRow, obsCol]) => obsRow === i && obsCol === j)) {
+                            strategyCellClass += ' obstacle'; // 障礙物灰色
+                        } else if (isPath) {
+                            strategyCellClass += ' path'; // 路徑黃色
+                        }
+                        const cellContent = (i === endRow && j === endCol) ? 'End' : data.policy[i][j];
+                        strategyRow += `<div class="${strategyCellClass}">${cellContent}</div>`;
+
+                        // 修改價值顯示部分，根據位置添加顏色類
+                        let valueCellClass = 'value-cell';
+                        if (i === startRow && j === startCol) {
+                            valueCellClass += ' start'; // 起點綠色
+                        } else if (i === endRow && j === endCol) {
+                            valueCellClass += ' end'; // 終點紅色
+                        } else if (obstaclePositions.some(([obsRow, obsCol]) => obsRow === i && obsCol === j)) {
+                            valueCellClass += ' obstacle'; // 障礙物灰色
+                        }
+                        valueRow += `<div class="${valueCellClass}">V=${data.value[i][j].toFixed(2)}</div>`;
+                    }
+                    strategyHTML += `<div style="display: grid; grid-template-columns: repeat(${gridSize}, 50px);">${strategyRow}</div>`;
+                    valueHTML += `<div style="display: grid; grid-template-columns: repeat(${gridSize}, 50px);">${valueRow}</div>`;
+                }
+
+                strategyDiv.innerHTML = strategyHTML;
+                valueDiv.innerHTML = valueHTML;
+
+                document.getElementById('start-agent').disabled = false;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('生成策略與價值時發生錯誤！');
+            });
+        }
+
+        function startAgent() {
+            if (!policy) {
+                alert("請先生成策略！");
+                return;
+            }
+
+            agentPos = [...startPos];
+            const grid = document.getElementById('grid');
+
+            if (agentElement) {
+                agentElement.remove();
+            }
+
+            agentElement = document.createElement('div');
+            agentElement.classList.add('agent');
+            grid.appendChild(agentElement);
+            updateAgentPosition();
+
+            console.log("Agent初始位置:", agentPos);
+            setTimeout(moveAgent, 1000);
+        }
+
+        function updateAgentPosition() {
+            const [row, col] = agentPos;
+            agentElement.style.left = `${col * 50 + 10}px`;
+            agentElement.style.top = `${row * 50 + 10}px`;
+        }
+
+        function moveAgent() {
+            const [row, col] = agentPos;
+            const [endRow, endCol] = endPos;
+
+            console.log(`當前位置: [${row}, ${col}]，策略: ${policy[row][col]}`);
+
+            if (row === endRow && col === endCol) {
+                alert("Agent已到達終點！");
+                return;
+            }
+
+            const action = policy[row][col];
+            let newRow = row;
+            let newCol = col;
+
+            if (action === '↑') newRow--;
+            else if (action === '↓') newRow++;
+            else if (action === '←') newCol--;
+            else if (action === '→') newCol++;
+
+            if (newRow >= 0 && newRow < gridSize && newCol >= 0 && newCol < gridSize) {
+                const isObstacle = obstaclePositions.some(([obsRow, obsCol]) => obsRow === newRow && obsCol === newCol);
+                if (!isObstacle) {
+                    agentPos = [newRow, newCol];
+                    updateAgentPosition();
+                    setTimeout(moveAgent, 500);
+                } else {
+                    alert("Agent遇到障礙物，無法繼續移動！");
+                }
+            } else {
+                alert("Agent移動到網格外，停止移動！");
+            }
+        }
+
+        function resetSelection() {
+            generateGrid();
+        }
+
+        window.onload = generateGrid;
+    </script>
+</body>
+</html>
